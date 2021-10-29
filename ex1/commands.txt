@@ -1,0 +1,10 @@
+# get provider api plugins
+terraform init
+# get current state of resources
+terraform plan
+# apply changes to resources
+terraform apply
+# destroy resources
+terraform destroy
+
+
