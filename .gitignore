@@ -1,3 +1,4 @@
-ex1/
-ex1/.**
+.*
+!/.gitignore
 !ex1/main.tf
+
