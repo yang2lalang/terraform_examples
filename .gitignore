@@ -1,4 +1,1 @@
-.*
-!/.gitignore
-!ex1/main.tf
-
+ex1/.terraform
