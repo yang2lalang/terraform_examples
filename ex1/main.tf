@@ -1,25 +1,29 @@
+locals {
+  json_data = jsondecode(file("${path.module}/key.json"))
+}
+
 # create a provider
 provider "aws" {
   region = "us-east-1"
-  access_key = ""
-  secret_key = ""
+  access_key = local.json_data.aws_key
+  secret_key = local.json_data.aws_secret
 }
 
 
 
 #create vpc
-resource "aws_vpc" "luxembourg_office_network" {
-  cidr_block = "10.0.1.0/24"
+resource "aws_vpc" "office_network" {
+  cidr_block = "10.0.1.0/28"
 
   tags = {
-    Name = "LuxOfficeNetwork"
+    Name = "OfficeNetwork"
   }
 }
 
 
 #create internet gateway
 resource "aws_internet_gateway" "company_public_gateway" {
-  vpc_id = aws_vpc.luxembourg_office_network.id
+  vpc_id = aws_vpc.office_network.id
 
   tags = {
     Name = "CompanyPublicGateway"
@@ -28,42 +32,42 @@ resource "aws_internet_gateway" "company_public_gateway" {
 #create custom route table
 #this helps to allow traffic from our subnet to the internet
 resource "aws_route_table" "company_route_table" {
-  vpc_id = aws_vpc.example.id
+  vpc_id = aws_vpc.office_network.id
 
-  route = [
+   
       #send all traffic from this subnet to the internet gateway
-    {
+  route  {
       cidr_block = "10.0.1.0/24"
       gateway_id = aws_internet_gateway.company_public_gateway.id
-    },
-      #send all IPV6 traffic to the internet gateway
-    {
-      ipv6_cidr_block        = "::/0"
-      egress_only_gateway_id = aws_internet_gateway.company_public_gateway.id
     }
-  ]
+      #send all IPV6 traffic to the internet gateway
+  route {
+      ipv6_cidr_block        = "::/0"
+      gateway_id = aws_internet_gateway.company_public_gateway.id
+    }
+  
 
   tags = {
-    Name = "example"
+    Name = "CompanyRouteTable"
   }
 }
 
 #create a subnet
-resource "aws_subnet" "luxembourg_office_subnet_pcs" {
-  vpc_id     = aws_vpc.luxembourg_office_network.id
-  cidr_block = "10.0.1.0/24"
+resource "aws_subnet" "office_subnet_pcs" {
+  vpc_id     = aws_vpc.office_network.id
+  cidr_block = "10.0.1.0/28"
   availability_zone = "us-east-1a" 
 
   tags = {
-    Name = "LuxOfficeSubNetPCS"
+    Name = "OfficeSubNetPCS"
   }
 }
 
 
 #associate subnet with route table
 # associates a subnet with a route table
-resource "aws_route_table_association" "luxofficesubnet_routetable_association" {
-  subnet_id      = aws_subnet.luxembourg_office_subnet_pcs.id
+resource "aws_route_table_association" "officesubnet_routetable_association" {
+  subnet_id      = aws_subnet.office_subnet_pcs.id
   route_table_id = aws_route_table.company_route_table.id
 }
 
@@ -71,7 +75,7 @@ resource "aws_route_table_association" "luxofficesubnet_routetable_association" 
 resource "aws_security_group" "allow_web_traffic" {
   name        = "allow_web_traffic"
   description = "Allow web traffic for ssh http and tls"
-  vpc_id      = aws_vpc.luxembourg_office_network.id
+  vpc_id      = aws_vpc.office_network.id
  
   #specifies a range of ports to be allowed and in this case Tcp 443:447
   # allows all ip addresses to access into this port since it is a web server
@@ -85,6 +89,9 @@ resource "aws_security_group" "allow_web_traffic" {
       protocol         = "tcp"
       cidr_blocks      = ["0.0.0.0/0"]
       ipv6_cidr_blocks = ["::/0"]
+      prefix_list_ids = []
+      security_groups = []
+      self = false
     },
     {
       description      = "HTTP Traffic"
@@ -93,6 +100,9 @@ resource "aws_security_group" "allow_web_traffic" {
       protocol         = "tcp"
       cidr_blocks      = ["0.0.0.0/0"]
       ipv6_cidr_blocks = ["::/0"]
+      prefix_list_ids = []
+      security_groups = []
+      self = false
     },
     {
       description      = "SSH Traffic"
@@ -101,30 +111,37 @@ resource "aws_security_group" "allow_web_traffic" {
       protocol         = "tcp"
       cidr_blocks      = ["0.0.0.0/0"]
       ipv6_cidr_blocks = ["::/0"]
+      prefix_list_ids = []
+      security_groups = []
+      self = false
     }
   ]
   
   #allow all ports in the egress direction for any protocol -1
   egress = [
     {
+     description      = "for all outgoing traffics"
       from_port        = 0
       to_port          = 0
       protocol         = "-1"
       cidr_blocks      = ["0.0.0.0/0"]
       ipv6_cidr_blocks = ["::/0"]
+      prefix_list_ids = []
+      security_groups = []
+      self = false
     }
   ]
 
   tags = {
-    Name = "AllowWeb-HTTPSHTTPSSH"
+    Name = "Allow_Web-HTTPS_HTTP_SSH"
   }
 }
 
 #create a network interface with an ip in the subnet that was previously created
 
-resource "aws_network_interface" "luxoffice_webserver_nic" {
-  subnet_id       = aws_subnet.luxembourg_office_subnet_pcs.id
-  private_ips     = ["10.0.12.11"]
+resource "aws_network_interface" "office_webserver_nic" {
+  subnet_id       = aws_subnet.office_subnet_pcs.id
+  private_ips     = ["10.0.1.11"]
   security_groups = [aws_security_group.allow_web_traffic.id]
 }
 #assign an elastic ip to the network interface
@@ -134,8 +151,8 @@ resource "aws_network_interface" "luxoffice_webserver_nic" {
 
 resource "aws_eip" "webserver_nic_elastic_ip" {
   vpc                       = true
-  network_interface         = aws_network_interface.luxoffice_webserver_nic.id
-  associate_with_private_ip = "10.0.12.11"
+  network_interface         = aws_network_interface.office_webserver_nic.id
+  associate_with_private_ip = "10.0.1.11"
   depends_on = [aws_internet_gateway.company_public_gateway]
 }
 
@@ -147,9 +164,9 @@ resource "aws_instance" "web_server_1" {
   instance_type = "t2.micro"
   availability_zone = "us-east-1a" 
   key_name = "rootkey"
-  network_interface = {
+  network_interface {
     device_index = 0
-    network_interface_id = aws_network_interface.luxoffice_webserver_nic.id
+    network_interface_id = aws_network_interface.office_webserver_nic.id
   }
   #Tell terraform on the deployment of this server to run commands to install Apache on this server
   #Update ubuntu OS
